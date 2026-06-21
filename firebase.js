@@ -2,14 +2,15 @@ require('dotenv').config();
 const { initializeApp } = require('firebase/app');
 const { getDatabase } = require('firebase/database');
 
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: process.env.AIzaSyAwqh5JlOu5mEdLgLHI3AXaYQbxHKIGozM,
-  authDomain: process.env.vespera-7da88.firebaseapp.com,
-  projectId: process.env.vespera-7da88,
-  storageBucket: process.env.vespera-7da88.firebasestorage.app,
-  messagingSenderId: process.env.501953267232,
-  appId: process.env.1:501953267232:web:274e017131cefd39c7de45,
-  measurementId: process.env.G-PQ6SRS2LJJ
+  apiKey: "AIzaSyAwqh5JlOu5mEdLgLHI3AXaYQbxHKIGozM",
+  authDomain: "vespera-7da88.firebaseapp.com",
+  projectId: "vespera-7da88",
+  storageBucket: "vespera-7da88.firebasestorage.app",
+  messagingSenderId: "501953267232",
+  appId: "1:501953267232:web:274e017131cefd39c7de45",
+  measurementId: "G-PQ6SRS2LJJ"
 };
 
 const app = initializeApp(firebaseConfig);

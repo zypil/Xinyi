@@ -8,7 +8,7 @@
 
 ```
 xinyi-bot/
-├── .env                    # Environment variables (secrets)
+├── .env                    # Environment variables (secrets) - NEVER SHARE
 ├── package.json            # Node.js dependencies & scripts
 ├── index.js                # Bot main entry point
 ├── firebase.js             # Firebase Realtime Database setup
@@ -39,6 +39,8 @@ git remote add origin https://github.com/username/xinyi-bot.git
 git push -u origin main
 ```
 
+> ⚠️ **IMPORTANT**: Make sure `.env` is in `.gitignore` before pushing!
+
 ### Step 2: Import to Replit
 
 1. Open [Replit](https://replit.com)
@@ -51,18 +53,20 @@ git push -u origin main
 
 In Replit, go to **Tools** → **Secrets** and add these:
 
-| Key | Value | Description |
-|-----|-------|-------------|
-| `DISCORD_TOKEN` | `MTUxNzQwNjQzNjg3MzczMjA5Ng.GYVqlo.SflO4OuT7y13uN-a7KsPh-7U5EjC2JGSeZATIA` | Bot token from Discord Developer Portal |
-| `DISCORD_CLIENT_ID` | `1517406436873732096` | Application ID |
-| `DISCORD_GUILD_ID` | `1398875124257652736` | Your VESPERA server ID |
-| `FIREBASE_API_KEY` | `AIzaSyAwqh5JlOu5mEdLgLHI3AXaYQbxHKIGozM` | Firebase API key |
-| `FIREBASE_AUTH_DOMAIN` | `vespera-7da88.firebaseapp.com` | Firebase auth domain |
-| `FIREBASE_PROJECT_ID` | `vespera-7da88` | Firebase project ID |
-| `FIREBASE_STORAGE_BUCKET` | `vespera-7da88.firebasestorage.app` | Firebase storage |
-| `FIREBASE_MESSAGING_SENDER_ID` | `501953267232` | Firebase messaging |
-| `FIREBASE_APP_ID` | `1:501953267232:web:274e017131cefd39c7de45` | Firebase app ID |
-| `FIREBASE_MEASUREMENT_ID` | `G-PQ6SRS2LJJ` | Firebase analytics |
+| Key | Description |
+|-----|-------------|
+| `DISCORD_TOKEN` | Bot token from Discord Developer Portal |
+| `DISCORD_CLIENT_ID` | Application ID |
+| `DISCORD_GUILD_ID` | Your VESPERA server ID |
+| `FIREBASE_API_KEY` | Firebase API key |
+| `FIREBASE_AUTH_DOMAIN` | Firebase auth domain |
+| `FIREBASE_PROJECT_ID` | Firebase project ID |
+| `FIREBASE_STORAGE_BUCKET` | Firebase storage |
+| `FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging |
+| `FIREBASE_APP_ID` | Firebase app ID |
+| `FIREBASE_MEASUREMENT_ID` | Firebase analytics |
+
+> 🔒 **NEVER** paste your actual token values in any public file!
 
 ### Step 4: Install & Run
 
@@ -85,8 +89,10 @@ Or click **Run** button in Replit.
   - ✅ Presence Intent
   - ✅ Server Members Intent
   - ✅ Message Content Intent
-- Copy **Token** → Paste in `.env` as `DISCORD_TOKEN`
-- Copy **Application ID** → Paste as `DISCORD_CLIENT_ID`
+- Copy **Token** → Add to Replit Secrets as `DISCORD_TOKEN`
+- Copy **Application ID** → Add as `DISCORD_CLIENT_ID`
+
+> 🔒 **Keep your token secret!** If leaked, regenerate immediately in Developer Portal.
 
 ### 2. Invite Bot to Server
 - Go to **OAuth2** → **URL Generator**
@@ -108,7 +114,7 @@ Or click **Run** button in Replit.
 ### 3. Get Guild ID
 - In Discord, enable **Developer Mode** (User Settings → Advanced)
 - Right-click VESPERA server name → **Copy Server ID**
-- Paste in `.env` as `DISCORD_GUILD_ID`
+- Add to Replit Secrets as `DISCORD_GUILD_ID`
 
 ---
 
@@ -129,7 +135,7 @@ Or click **Run** button in Replit.
 - Go to **Project Settings** → **General** tab
 - Scroll to **Your apps** → Click **</>** (Web)
 - Register app: "xinyi-bot"
-- Copy config values → Paste in `.env`
+- Copy config values → Add to Replit Secrets
 
 ### 4. Database Rules (for development)
 ```json
@@ -293,7 +299,7 @@ vespera-7da88-default-rtdb
 3. Re-invite bot with `applications.commands` scope
 
 ### Firebase not connecting?
-1. Check all Firebase config values in `.env`
+1. Check all Firebase config values in Secrets
 2. Ensure Realtime Database is created
 3. Check database rules allow read/write
 4. Verify project ID matches
@@ -335,6 +341,16 @@ vespera-7da88-default-rtdb
 - ✅ Nitro rewards for top 3
 - ✅ Welcome messages & auto-role
 - ✅ Server statistics
+
+---
+
+## 🔒 Security Notes
+
+- **NEVER** share your `.env` file or bot token publicly
+- **NEVER** commit `.env` to GitHub
+- Regenerate token immediately if leaked
+- Use Replit Secrets for production deployment
+- Consider stricter Firebase rules for production
 
 ---
 
