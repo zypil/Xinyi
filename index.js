@@ -1,1 +1,162 @@
-require('dotenv').config();const{Client,GatewayIntentBits,EmbedBuilder,ActionRowBuilder,ButtonBuilder,ButtonStyle,SlashCommandBuilder,PermissionsBitField,AttachmentBuilder}=require('discord.js');const{initializeApp}=require('firebase/app');const{getDatabase,ref,set,get,update,remove,child,onValue,increment}=require('firebase/database');const cron=require('node-cron');const{createCanvas,loadImage,registerFont}=require('canvas');const fs=require('fs');const path=require('path');const firebaseConfig={apiKey:process.env.FIREBASE_API_KEY,authDomain:process.env.FIREBASE_AUTH_DOMAIN,projectId:process.env.FIREBASE_PROJECT_ID,storageBucket:process.env.FIREBASE_STORAGE_BUCKET,messagingSenderId:process.env.FIREBASE_MESSAGING_SENDER_ID,appId:process.env.FIREBASE_APP_ID,measurementId:process.env.FIREBASE_MEASUREMENT_ID};const app=initializeApp(firebaseConfig);const db=getDatabase(app);const client=new Client({intents:[GatewayIntentBits.Guilds,GatewayIntentBits.GuildMembers,GatewayIntentBits.GuildMessages,GatewayIntentBits.MessageContent,GatewayIntentBits.GuildVoiceStates]});const COLORS={primary:0x6B4EE6,secondary:0x9B7BFF,accent:0xFF6B9D,danger:0xFF4757,success:0x2ED573,warning:0xFFA502,dark:0x1E1E2E,light:0xF8F8FF,gold:0xFFD700,silver:0xC0C0C0,bronze:0xCD7F32,venom:0x4B0082};const RANKS=[{name:'Novice',min:0,color:0x95A5A6,icon:'🌱'},{name:'Explorer',min:100,color:0x3498DB,icon:'🔍'},{name:'Adventurer',min:500,color:0x2ECC71,icon:'⚔️'},{name:'Knight',min:1500,color:0x9B59B6,icon:'🛡️'},{name:'Elite',min:3500,color:0xE74C3C,icon:'👑'},{name:'Legend',min:7000,color:0xFFD700,icon:'🏆'},{name:'Vespera',min:15000,color:0x6B4EE6,icon:'🌙'}];const ADMIN_ROLES=['OWNER','MOD'];const COOLDOWN=new Map();const XP_COOLDOWN=60000;const XP_MIN=15;const XP_MAX=25;const LEVEL_MULTIPLIER=100;function getRank(xp){for(let i=RANKS.length-1;i>=0;i--){if(xp>=RANKS[i].min)return RANKS[i];}return RANKS[0];}function getLevel(xp){return Math.floor(Math.sqrt(xp/LEVEL_MULTIPLIER))+1;}function getXpForLevel(level){return Math.pow(level-1,2)*LEVEL_MULTIPLIER;}function getProgress(xp){const level=getLevel(xp);const currentLevelXp=getXpForLevel(level);const nextLevelXp=getXpForLevel(level+1);const progress=((xp-currentLevelXp)/(nextLevelXp-currentLevelXp))*100;return Math.min(100,Math.max(0,progress));}async function getUserData(userId,guildId){const snapshot=await get(ref(db,`users/${guildId}/${userId}`));if(snapshot.exists())return snapshot.val();return{xp:0,messages:0,joinDate:Date.now(),lastActive:Date.now(),nitroWins:0,streak:0,avatar:null};}async function updateUserData(userId,guildId,data){await update(ref(db,`users/${guildId}/${userId}`),data);}async function getGuildConfig(guildId){const snapshot=await get(ref(db,`config/${guildId}`));if(snapshot.exists())return snapshot.val();return{leaderboardChannel:null,commandChannel:null,adminRoles:['OWNER','MOD'],welcomeChannel:null,autoRole:null};}async function setGuildConfig(guildId,key,value){await update(ref(db,`config/${guildId}`),{[key]:value});}async function getLeaderboard(guildId,limit=10){const snapshot=await get(ref(db,`users/${guildId}`));if(!snapshot.exists())return[];const users=Object.entries(snapshot.val()).map(([id,data])=>({id,...data})).sort((a,b)=>b.xp-a.xp).slice(0,limit);return users;}async function generateProfileCard(user,memberData,guild){const width=900;const height=350;const canvas=createCanvas(width,height);const ctx=canvas.getContext('2d');const rank=getRank(memberData.xp);const level=getLevel(memberData.xp);const progress=getProgress(memberData.xp);const gradient=ctx.createLinearGradient(0,0,width,height);gradient.addColorStop(0,'#1a1a2e');gradient.addColorStop(0.5,'#16213e');gradient.addColorStop(1,'#0f3460');ctx.fillStyle=gradient;ctx.fillRect(0,0,width,height);ctx.strokeStyle='#6B4EE6';ctx.lineWidth=4;ctx.strokeRect(0,0,width,height);const glow=ctx.createRadialGradient(100,100,0,100,100,300);glow.addColorStop(0,'rgba(107,78,230,0.3)');glow.addColorStop(1,'rgba(107,78,230,0)');ctx.fillStyle=glow;ctx.fillRect(0,0,width,height);ctx.beginPath();ctx.arc(130,175,80,0,Math.PI*2);ctx.fillStyle='#0f3460';ctx.fill();ctx.lineWidth=3;ctx.strokeStyle=rank.color?`#${rank.color.toString(16).padStart(6,'0')}`:'#6B4EE6';ctx.stroke();try{const avatarURL=user.displayAvatarURL({extension:'png',size:256});const img=await loadImage(avatarURL);ctx.save();ctx.beginPath();ctx.arc(130,175,75,0,Math.PI*2);ctx.clip();ctx.drawImage(img,55,100,150,150);ctx.restore();}catch(e){ctx.fillStyle='#6B4EE6';ctx.beginPath();ctx.arc(130,175,75,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 40px Arial';ctx.textAlign='center';ctx.fillText(user.username[0].toUpperCase(),130,190);}ctx.fillStyle='#fff';ctx.font='bold 36px Arial';ctx.textAlign='left';ctx.fillText(user.username,240,130);ctx.fillStyle='#9B7BFF';ctx.font='24px Arial';ctx.fillText(`${rank.icon} ${rank.name}`,240,165);ctx.fillStyle='#fff';ctx.font='bold 28px Arial';ctx.fillText(`Level ${level}`,240,210);ctx.fillStyle='#6B4EE6';ctx.font='20px Arial';ctx.fillText(`${memberData.xp.toLocaleString()} XP`,240,245);ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(240,270,580,25);const progressGradient=ctx.createLinearGradient(240,270,820,270);progressGradient.addColorStop(0,'#6B4EE6');progressGradient.addColorStop(1,'#FF6B9D');ctx.fillStyle=progressGradient;ctx.fillRect(240,270,580*(progress/100),25);ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.textAlign='center';ctx.fillText(`${Math.floor(progress)}%`,530,287);ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='16px Arial';ctx.textAlign='left';ctx.fillText(`Messages: ${memberData.messages||0}`,680,130);ctx.fillText(`Streak: ${memberData.streak||0}🔥`,680,155);ctx.fillText(`Nitro Wins: ${memberData.nitroWins||0}🎁`,680,180);const buffer=canvas.toBuffer('image/png');return new AttachmentBuilder(buffer,{name:'profile.png'});}async function generateLeaderboardImage(guild,topUsers){const width=1000;const height=200+(topUsers.length*120);const canvas=createCanvas(width,height);const ctx=canvas.getContext('2d');const gradient=ctx.createLinearGradient(0,0,0,height);gradient.addColorStop(0,'#0f0f1a');gradient.addColorStop(1,'#1a1a2e');ctx.fillStyle=gradient;ctx.fillRect(0,0,width,height);ctx.strokeStyle='#6B4EE6';ctx.lineWidth=5;ctx.strokeRect(0,0,width,height);const titleGlow=ctx.createRadialGradient(500,60,0,500,60,200);titleGlow.addColorStop(0,'rgba(107,78,230,0.4)');titleGlow.addColorStop(1,'rgba(107,78,230,0)');ctx.fillStyle=titleGlow;ctx.fillRect(0,0,width,120);ctx.fillStyle='#fff';ctx.font='bold 48px Arial';ctx.textAlign='center';ctx.fillText('🏆 VESPERA LEADERBOARD',500,70);ctx.fillStyle='#9B7BFF';ctx.font='24px Arial';ctx.fillText('Top Active Members',500,100);const medals=['🥇','🥈','🥉'];for(let i=0;i<topUsers.length;i++){const userData=topUsers[i];const member=await guild.members.fetch(userData.id).catch(()=>null);const y=140+(i*120);const rowGradient=ctx.createLinearGradient(0,y,0,y+100);if(i===0){rowGradient.addColorStop(0,'rgba(255,215,0,0.2)');rowGradient.addColorStop(1,'rgba(255,215,0,0.05)');}else if(i===1){rowGradient.addColorStop(0,'rgba(192,192,192,0.2)');rowGradient.addColorStop(1,'rgba(192,192,192,0.05)');}else if(i===2){rowGradient.addColorStop(0,'rgba(205,127,50,0.2)');rowGradient.addColorStop(1,'rgba(205,127,50,0.05)');}else{rowGradient.addColorStop(0,'rgba(107,78,230,0.1)');rowGradient.addColorStop(1,'rgba(107,78,230,0.02)');}ctx.fillStyle=rowGradient;ctx.fillRect(20,y,960,100);ctx.strokeStyle=i<3?'#FFD700':'#6B4EE6';ctx.lineWidth=2;ctx.strokeRect(20,y,960,100);ctx.fillStyle='#fff';ctx.font='bold 32px Arial';ctx.textAlign='left';ctx.fillText(`${medals[i]||'#'+(i+1)}`,40,y+65);const rank=getRank(userData.xp);try{if(member){const avatarURL=member.user.displayAvatarURL({extension:'png',size:128});const img=await loadImage(avatarURL);ctx.save();ctx.beginPath();ctx.arc(130,y+50,35,0,Math.PI*2);ctx.clip();ctx.drawImage(img,95,y+15,70,70);ctx.restore();}else{ctx.fillStyle='#6B4EE6';ctx.beginPath();ctx.arc(130,y+50,35,0,Math.PI*2);ctx.fill();}}catch(e){ctx.fillStyle='#6B4EE6';ctx.beginPath();ctx.arc(130,y+50,35,0,Math.PI*2);ctx.fill();}ctx.fillStyle='#fff';ctx.font='bold 24px Arial';ctx.fillText(member?member.user.username:'Unknown',180,y+45);ctx.fillStyle=rank.color?`#${rank.color.toString(16).padStart(6,'0')}`:'#6B4EE6';ctx.font='18px Arial';ctx.fillText(`${rank.icon} ${rank.name}`,180,y+70);ctx.fillStyle='#fff';ctx.font='bold 20px Arial';ctx.textAlign='right';ctx.fillText(`Lv.${getLevel(userData.xp)}`,850,y+45);ctx.fillStyle='#9B7BFF';ctx.font='18px Arial';ctx.fillText(`${userData.xp.toLocaleString()} XP`,850,y+70);if(i<3){ctx.fillStyle='#FFD700';ctx.font='bold 16px Arial';ctx.fillText('🎁 NITRO ELIGIBLE',850,y+90);}}const buffer=canvas.toBuffer('image/png');return new AttachmentBuilder(buffer,{name:'leaderboard.png'});}async function updateLeaderboard(guild){const config=await getGuildConfig(guild.id);if(!config.leaderboardChannel)return;const channel=await guild.channels.fetch(config.leaderboardChannel).catch(()=>null);if(!channel)return;const topUsers=await getLeaderboard(guild.id,10);if(topUsers.length===0)return;const attachment=await generateLeaderboardImage(guild,topUsers);const embed=new EmbedBuilder().setTitle('🌙 VESPERA LEADERBOARD').setDescription('Top active members ranked by XP').setColor(COLORS.primary).setImage('attachment://leaderboard.png').setTimestamp().setFooter({text:'Updates every 5 minutes | Type /profile to see your stats'});const messages=await channel.messages.fetch({limit:10});const botMessage=messages.find(m=>m.author.id===client.user.id);if(botMessage){await botMessage.edit({embeds:[embed],files:[attachment]});}else{await channel.send({embeds:[embed],files:[attachment]});}}const commands=[new SlashCommandBuilder().setName('profile').setDescription('View your profile card').addUserOption(o=>o.setName('user').setDescription('User to view').setRequired(false)),new SlashCommandBuilder().setName('leaderboard').setDescription('View the server leaderboard').addIntegerOption(o=>o.setName('limit').setDescription('Number of users').setMinValue(5).setMaxValue(25).setRequired(false)),new SlashCommandBuilder().setName('rank').setDescription('Check your current rank and progress'),new SlashCommandBuilder().setName('setleaderboardinfo').setDescription('Set leaderboard channel (ADMIN ONLY)').addChannelOption(o=>o.setName('channel').setDescription('Channel for leaderboard').setRequired(true)).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('setcommandchannel').setDescription('Set admin command channel (ADMIN ONLY)').addChannelOption(o=>o.setName('channel').setDescription('Admin command channel').setRequired(true)).addStringOption(o=>o.setName('commands').setDescription('Comma-separated commands (e.g., kick,ban,mute)').setRequired(true)).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('setwelcome').setDescription('Set welcome channel (ADMIN ONLY)').addChannelOption(o=>o.setName('channel').setDescription('Welcome channel').setRequired(true)).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('setautorole').setDescription('Set auto-role for new members (ADMIN ONLY)').addRoleOption(o=>o.setName('role').setDescription('Role to assign').setRequired(true)).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('givexp').setDescription('Give XP to a user (ADMIN ONLY)').addUserOption(o=>o.setName('user').setRequired(true).setDescription('User')).addIntegerOption(o=>o.setName('amount').setRequired(true).setDescription('XP amount').setMinValue(1)).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('removexp').setDescription('Remove XP from user (ADMIN ONLY)').addUserOption(o=>o.setName('user').setRequired(true).setDescription('User')).addIntegerOption(o=>o.setName('amount').setRequired(true).setDescription('XP amount').setMinValue(1)).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('resetuser').setDescription('Reset user data (ADMIN ONLY)').addUserOption(o=>o.setName('user').setRequired(true).setDescription('User')).setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('nitroreward').setDescription('Award Nitro to top 3 (OWNER ONLY)').setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('serverstats').setDescription('View server statistics (ADMIN ONLY)').setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('config').setDescription('View current bot configuration (ADMIN ONLY)').setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),new SlashCommandBuilder().setName('help').setDescription('Show all available commands')];client.once('ready',async()=>{console.log(`🌙 XINYI is online! Logged in as ${client.user.tag}`);const rest=client.rest;try{await rest.put(`/applications/${process.env.DISCORD_CLIENT_ID}/guilds/${process.env.DISCORD_GUILD_ID}/commands`,{body:commands.map(c=>c.toJSON())});console.log('✅ Slash commands registered');}catch(e){console.error('❌ Command registration failed:',e);}cron.schedule('*/5 * * * *',async()=>{const guild=await client.guilds.fetch(process.env.DISCORD_GUILD_ID).catch(()=>null);if(guild)await updateLeaderboard(guild);});});client.on('guildMemberAdd',async(member)=>{const config=await getGuildConfig(member.guild.id);if(config.welcomeChannel){const channel=await member.guild.channels.fetch(config.welcomeChannel).catch(()=>null);if(channel){const embed=new EmbedBuilder().setTitle(`🌙 Welcome to ${member.guild.name}!`).setDescription(`Hey ${member}, welcome to **VESPERA**! Start chatting to earn XP and climb the leaderboard!`).setColor(COLORS.primary).setThumbnail(member.user.displayAvatarURL()).setTimestamp();await channel.send({content:`${member}`,embeds:[embed]});}}if(config.autoRole){const role=await member.guild.roles.fetch(config.autoRole).catch(()=>null);if(role)await member.roles.add(role).catch(()=>null);}await set(ref(db,`users/${member.guild.id}/${member.id}`),{xp:0,messages:0,joinDate:Date.now(),lastActive:Date.now(),nitroWins:0,streak:0,avatar:member.user.displayAvatarURL()});});client.on('messageCreate',async(message)=>{if(message.author.bot||!message.guild)return;const now=Date.now();const key=`${message.guild.id}-${message.author.id}`;if(COOLDOWN.has(key)&&now-COOLDOWN.get(key)<XP_COOLDOWN)return;COOLDOWN.set(key,now);const xpGain=Math.floor(Math.random()*(XP_MAX-XP_MIN+1))+XP_MIN;const userData=await getUserData(message.author.id,message.guild.id);const newXp=(userData.xp||0)+xpGain;const newMessages=(userData.messages||0)+1;const oldLevel=getLevel(userData.xp||0);const newLevel=getLevel(newXp);await updateUserData(message.author.id,message.guild.id,{xp:newXp,messages:newMessages,lastActive:now,streak:((now-(userData.lastActive||0))<86400000)?(userData.streak||0)+1:1});if(newLevel>oldLevel){const embed=new EmbedBuilder().setTitle('🎉 LEVEL UP!').setDescription(`${message.author} leveled up to **Level ${newLevel}**!`).setColor(COLORS.gold).setThumbnail(message.author.displayAvatarURL());await message.reply({embeds:[embed]}).catch(()=>null);}});client.on('interactionCreate',async(interaction)=>{if(!interaction.isChatInputCommand())return;const{commandName,options,user,guildId,member}=interaction;const config=await getGuildConfig(guildId);if(config.commandChannel&&interaction.channelId!==config.commandChannel){const adminCommands=['setleaderboardinfo','setcommandchannel','setwelcome','setautorole','givexp','removexp','resetuser','nitroreward','serverstats','config'];if(adminCommands.includes(commandName)){return interaction.reply({content:`❌ Admin commands only work in <#${config.commandChannel}>`,ephemeral:true});}}try{switch(commandName){case'profile':{const target=options.getUser('user')||user;const targetMember=await interaction.guild.members.fetch(target.id).catch(()=>null);const data=await getUserData(target.id,guildId);const attachment=await generateProfileCard(target,data,interaction.guild);const rank=getRank(data.xp);const embed=new EmbedBuilder().setTitle(`${rank.icon} ${target.username}'s Profile`).setDescription(`**Rank:** ${rank.name}\n**Level:** ${getLevel(data.xp)}\n**XP:** ${data.xp.toLocaleString()}\n**Messages:** ${data.messages||0}\n**Streak:** ${data.streak||0}🔥\n**Nitro Wins:** ${data.nitroWins||0}🎁`).setColor(rank.color||COLORS.primary).setImage('attachment://profile.png').setTimestamp();await interaction.reply({embeds:[embed],files:[attachment],ephemeral:target.id===user.id});break;}case'leaderboard':{const limit=options.getInteger('limit')||10;const topUsers=await getLeaderboard(guildId,limit);if(topUsers.length===0)return interaction.reply({content:'No data yet! Start chatting to earn XP.',ephemeral:true});const attachment=await generateLeaderboardImage(interaction.guild,topUsers);const embed=new EmbedBuilder().setTitle('🏆 VESPERA LEADERBOARD').setDescription('Top active members').setColor(COLORS.primary).setImage('attachment://leaderboard.png').setTimestamp();await interaction.reply({embeds:[embed],files:[attachment]});break;}case'rank':{const data=await getUserData(user.id,guildId);const rank=getRank(data.xp);const level=getLevel(data.xp);const progress=getProgress(data.xp);const embed=new EmbedBuilder().setTitle(`${rank.icon} Your Rank`).addFields({name:'Rank',value:rank.name,inline:true},{name:'Level',value:`${level}`,inline:true},{name:'XP',value:`${data.xp.toLocaleString()}`,inline:true},{name:'Progress',value:`${Math.floor(progress)}% to Level ${level+1}`,inline:true},{name:'Messages',value:`${data.messages||0}`,inline:true},{name:'Streak',value:`${data.streak||0}🔥`,inline:true}).setColor(rank.color||COLORS.primary).setThumbnail(user.displayAvatarURL()).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'setleaderboardinfo':{const channel=options.getChannel('channel');await setGuildConfig(guildId,'leaderboardChannel',channel.id);const embed=new EmbedBuilder().setTitle('✅ Leaderboard Channel Set').setDescription(`Leaderboard will update in ${channel}`).setColor(COLORS.success).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});await updateLeaderboard(interaction.guild);break;}case'setcommandchannel':{const channel=options.getChannel('channel');const commandsStr=options.getString('commands');await setGuildConfig(guildId,'commandChannel',channel.id);await setGuildConfig(guildId,'allowedCommands',commandsStr.split(',').map(c=>c.trim()));const embed=new EmbedBuilder().setTitle('✅ Admin Command Channel Set').setDescription(`Channel: ${channel}\nCommands: ${commandsStr}`).setColor(COLORS.success).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'setwelcome':{const channel=options.getChannel('channel');await setGuildConfig(guildId,'welcomeChannel',channel.id);const embed=new EmbedBuilder().setTitle('✅ Welcome Channel Set').setDescription(`New members will be welcomed in ${channel}`).setColor(COLORS.success).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'setautorole':{const role=options.getRole('role');await setGuildConfig(guildId,'autoRole',role.id);const embed=new EmbedBuilder().setTitle('✅ Auto-Role Set').setDescription(`New members will get ${role}`).setColor(COLORS.success).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'givexp':{const target=options.getUser('user');const amount=options.getInteger('amount');const data=await getUserData(target.id,guildId);await updateUserData(target.id,guildId,{xp:(data.xp||0)+amount});const embed=new EmbedBuilder().setTitle('✅ XP Given').setDescription(`Gave **${amount} XP** to ${target}`).setColor(COLORS.success).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'removexp':{const target=options.getUser('user');const amount=options.getInteger('amount');const data=await getUserData(target.id,guildId);const newXp=Math.max(0,(data.xp||0)-amount);await updateUserData(target.id,guildId,{xp:newXp});const embed=new EmbedBuilder().setTitle('✅ XP Removed').setDescription(`Removed **${amount} XP** from ${target}\nNew XP: ${newXp}`).setColor(COLORS.warning).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'resetuser':{const target=options.getUser('user');await remove(ref(db,`users/${guildId}/${target.id}`));const embed=new EmbedBuilder().setTitle('✅ User Reset').setDescription(`Reset all data for ${target}`).setColor(COLORS.danger).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'nitroreward':{const topUsers=await getLeaderboard(guildId,3);if(topUsers.length<3)return interaction.reply({content:'Need at least 3 members for Nitro rewards!',ephemeral:true});const embed=new EmbedBuilder().setTitle('🎁 NITRO REWARDS DISTRIBUTED').setDescription(`**1st Place:** <@${topUsers[0].id}> - 3 Days Nitro\n**2nd Place:** <@${topUsers[1].id}> - 3 Days Nitro\n**3rd Place:** <@${topUsers[2].id}> - 3 Days Nitro`).setColor(COLORS.gold).setTimestamp();for(let i=0;i<3;i++){await updateUserData(topUsers[i].id,guildId,{nitroWins:(topUsers[i].nitroWins||0)+1});}await interaction.reply({embeds:[embed]});const config=await getGuildConfig(guildId);if(config.leaderboardChannel){const lbChannel=await interaction.guild.channels.fetch(config.leaderboardChannel).catch(()=>null);if(lbChannel)await lbChannel.send({embeds:[embed]});}break;}case'serverstats':{const snapshot=await get(ref(db,`users/${guildId}`));const users=snapshot.exists()?Object.keys(snapshot.val()).length:0;const totalMessages=snapshot.exists()?Object.values(snapshot.val()).reduce((a,b)=>a+(b.messages||0),0):0;const embed=new EmbedBuilder().setTitle('📊 Server Statistics').addFields({name:'Total Members',value:`${users}`,inline:true},{name:'Total Messages',value:`${totalMessages.toLocaleString()}`,inline:true},{name:'Active Today',value:`${snapshot.exists()?Object.values(snapshot.val()).filter(u=>u.lastActive>Date.now()-86400000).length:0}`,inline:true}).setColor(COLORS.primary).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'config':{const cfg=await getGuildConfig(guildId);const embed=new EmbedBuilder().setTitle('⚙️ Bot Configuration').addFields({name:'Leaderboard Channel',value:cfg.leaderboardChannel?`<#${cfg.leaderboardChannel}>`:'Not set',inline:true},{name:'Command Channel',value:cfg.commandChannel?`<#${cfg.commandChannel}>`:'Not set',inline:true},{name:'Welcome Channel',value:cfg.welcomeChannel?`<#${cfg.welcomeChannel}>`:'Not set',inline:true},{name:'Auto Role',value:cfg.autoRole?`<@&${cfg.autoRole}>`:'Not set',inline:true},{name:'Admin Roles',value:cfg.adminRoles?.join(', ')||'OWNER, MOD',inline:true}).setColor(COLORS.primary).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}case'help':{const embed=new EmbedBuilder().setTitle('🌙 XINYI - VESPERA BOT HELP').setDescription('**User Commands:**\n`/profile` - View your profile card\n`/profile @user` - View someone\'s profile\n`/leaderboard` - View server leaderboard\n`/rank` - Check your rank & progress\n\n**Admin Commands:**\n`/setleaderboardinfo #channel` - Set leaderboard channel\n`/setcommandchannel #channel commands` - Set admin command channel\n`/setwelcome #channel` - Set welcome channel\n`/setautorole @role` - Set auto-role for new members\n`/givexp @user amount` - Give XP to user\n`/removexp @user amount` - Remove XP from user\n`/resetuser @user` - Reset user data\n`/nitroreward` - Award Nitro to top 3\n`/serverstats` - View server stats\n`/config` - View bot configuration\n\n**Features:**\n• Auto-register new members\n• XP from chatting (cooldown: 1 min)\n• Level up system with 7 ranks\n• Streak system\n• Auto leaderboard updates every 5 min\n• Top 3 get Nitro rewards\n• Beautiful profile cards & leaderboard images').setColor(COLORS.primary).setTimestamp();await interaction.reply({embeds:[embed],ephemeral:true});break;}}}catch(e){console.error(e);await interaction.reply({content:'❌ An error occurred!',ephemeral:true}).catch(()=>null);}});client.login(process.env.DISCORD_TOKEN);
+require('dotenv').config();
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const cron = require('node-cron');
+const { db } = require('./firebase');
+const { ref, set, remove } = require('firebase/database');
+
+const {
+  getUserData,
+  updateUserData,
+  getGuildConfig,
+  getXpGain,
+  isOnCooldown,
+  updateLeaderboard,
+  COLORS
+} = require('./utils');
+
+const profileCmd = require('./profile');
+const leaderboardCmd = require('./leaderboard');
+const rankCmd = require('./rank');
+const adminCmd = require('./admin');
+const nitroCmd = require('./nitro');
+const statsCmd = require('./stats');
+const helpCmd = require('./help');
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates
+  ]
+});
+
+const slashCommands = [
+  profileCmd.data,
+  leaderboardCmd.data,
+  rankCmd.data,
+  ...adminCmd.data,
+  nitroCmd.data,
+  ...statsCmd.data,
+  helpCmd.data
+];
+
+client.once('ready', async () => {
+  console.log(`🌙 XINYI is online! Logged in as ${client.user.tag}`);
+
+  try {
+    await client.rest.put(
+      `/applications/${process.env.DISCORD_CLIENT_ID}/guilds/${process.env.DISCORD_GUILD_ID}/commands`,
+      { body: slashCommands.map(c => c.toJSON()) }
+    );
+    console.log('✅ Slash commands registered');
+  } catch (e) {
+    console.error('❌ Command registration failed:', e);
+  }
+
+  cron.schedule('*/5 * * * *', async () => {
+    const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID).catch(() => null);
+    if (guild) await updateLeaderboard(client, guild);
+  });
+});
+
+client.on('guildMemberAdd', async (member) => {
+  const config = await getGuildConfig(member.guild.id);
+
+  if (config.welcomeChannel) {
+    const channel = await member.guild.channels.fetch(config.welcomeChannel).catch(() => null);
+    if (channel) {
+      const embed = new EmbedBuilder()
+        .setTitle(`🌙 Welcome to ${member.guild.name}!`)
+        .setDescription(`Hey ${member}, welcome to **VESPERA**! Start chatting to earn XP and climb the leaderboard!`)
+        .setColor(COLORS.primary)
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp();
+      await channel.send({ content: `${member}`, embeds: [embed] });
+    }
+  }
+
+  if (config.autoRole) {
+    const role = await member.guild.roles.fetch(config.autoRole).catch(() => null);
+    if (role) await member.roles.add(role).catch(() => null);
+  }
+
+  await set(ref(db, `users/${member.guild.id}/${member.id}`), {
+    xp: 0,
+    messages: 0,
+    joinDate: Date.now(),
+    lastActive: Date.now(),
+    nitroWins: 0,
+    streak: 0
+  });
+});
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.guild) return;
+
+  if (isOnCooldown(message.guild.id, message.author.id)) return;
+
+  const xpGain = getXpGain();
+  const userData = await getUserData(message.author.id, message.guild.id);
+  const newXp = (userData.xp || 0) + xpGain;
+  const newMessages = (userData.messages || 0) + 1;
+  const oldLevel = Math.floor(Math.sqrt((userData.xp || 0) / 100)) + 1;
+  const newLevel = Math.floor(Math.sqrt(newXp / 100)) + 1;
+
+  await updateUserData(message.author.id, message.guild.id, {
+    xp: newXp,
+    messages: newMessages,
+    lastActive: Date.now(),
+    streak: ((Date.now() - (userData.lastActive || 0)) < 86400000) ? (userData.streak || 0) + 1 : 1
+  });
+
+  if (newLevel > oldLevel) {
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 LEVEL UP!')
+      .setDescription(`${message.author} leveled up to **Level ${newLevel}**!`)
+      .setColor(COLORS.gold)
+      .setThumbnail(message.author.displayAvatarURL());
+    await message.reply({ embeds: [embed] }).catch(() => null);
+  }
+});
+
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const config = await getGuildConfig(interaction.guildId);
+  const adminCommands = ['setleaderboardinfo', 'setcommandchannel', 'setwelcome', 'setautorole', 'givexp', 'removexp', 'resetuser', 'nitroreward', 'serverstats', 'config'];
+
+  if (config.commandChannel && adminCommands.includes(interaction.commandName)) {
+    if (interaction.channelId !== config.commandChannel) {
+      return interaction.reply({
+        content: `❌ Admin commands only work in <#${config.commandChannel}>`,
+        ephemeral: true
+      });
+    }
+  }
+
+  try {
+    switch (interaction.commandName) {
+      case 'profile': await profileCmd.execute(interaction); break;
+      case 'leaderboard': await leaderboardCmd.execute(interaction); break;
+      case 'rank': await rankCmd.execute(interaction); break;
+      case 'setleaderboardinfo':
+      case 'setcommandchannel':
+      case 'setwelcome':
+      case 'setautorole':
+      case 'givexp':
+      case 'removexp':
+      case 'resetuser': await adminCmd.execute(interaction); break;
+      case 'nitroreward': await nitroCmd.execute(interaction); break;
+      case 'serverstats':
+      case 'config': await statsCmd.execute(interaction); break;
+      case 'help': await helpCmd.execute(interaction); break;
+    }
+  } catch (e) {
+    console.error(e);
+    await interaction.reply({ content: '❌ An error occurred!', ephemeral: true }).catch(() => null);
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
